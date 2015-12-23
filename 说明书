@@ -1,0 +1,149 @@
+完成日期：2015.12.4
+作者：马润宇
+本说明书中若有与后续版本或与我本人口述有冲突之处，应以后者为准
+
+第一部分 综述：
+	本工具中有三个大的组成成分，macv部分，mahash部分，mahmm部分，分别有不同功能。
+当中mahash封装图像处理所需的数据结构，macv对opencv进行了又一次的封装，主要提供中
+点的提取，mahmm封装了一个适合用于向量特征分析的隐马尔可夫库
+
+第二部分 有关mahash：
+	文件位置：./cppsrc/mahash.cpp
+	依赖关系：./cppinc/mahash.hpp
+	该文件下mahash命名空间包含三个结构体，hashbody（hbyp），ilglist（ilgl），
+hhandle（hhnd），上文括号内为对应的指针，它们的作用分别是：
+	1）hashbody：存储一个图像当中某个点的位置，通道信息
+	2）ilglist：由hashbody组成的链表
+	3）hhandle：存储一个哈希应包含的信息
+	同时，该空间下的多个函数可以很好的操作哈希表
+
+	1）hhnd	mhscreate(int range,int hashfun(int bv,int gv,int rv));
+该函数提供一个创建hhandle的方法（返回一个hhandle的指针hhnd），需要两个参数，range
+代表这个哈希表占据的内存空间，hashfun代表散列函数。range=0,hashfun=NULL即为默认
+长度与默认散列函数。
+
+	2）void	mhsrelease(hhnd handle);
+该函数提供一个完全释放哈希表的方法，参数是这个哈希表的handle的指针hhnd，同时会释放
+handle本身。
+
+	3）void	mhsreleaseEx(hhnd handle);
+该函数提供一个不完全释放哈希表的方法，参数是这个哈希表的handle的指针hhnd，会释放表中
+所有数据，不会释放handle本身。
+	
+	4）	void	mhspush(hhnd handle,hbyp hb);
+		void	mhsset(hhnd handle,int bv\
+					,int gv,int rv,int posX,int posY);
+这两个函数功能一致，向哈希表放入数据，接受参数不一样而已，第一个只接受hashbody的指针
+第二个只接受三个通道值和两个坐标值。
+
+	5）	ilgl	mhspull(hhnd handle,int key);
+		ilgl	mhsget(hhnd handle,int bv,int gv,int rv);	
+同上，这两个功能一致，返回一个链表的头地址，当中有通道值相等的所有点。
+
+	6）void	ilgrelease(ilgl isolist);
+释放ilgl对应的链表
+
+	7）int		mhsdefault(int bv,int gv,int rv);
+默认的通道简化函数，与默认的range应配合修改
+
+	第三部分 有关macv：
+	文件位置：./cppsrc/macv.cpp
+	依赖关系：./cppsrc/mahash.cpp ./cppinc/mahash.hpp ./cppinc/macv.hpp 
+	该文件下macv类包含private成员path，vmat，vcap，gappos和public成员若干
+	
+	private中，path表示文件路径，vmat是一个cv::Mat，vcap是一个cv::VideoCapture，
+gappos是之前mahash的哈希表。
+	
+	1)macv(int range,int hfunc(int bv,int gv,int rv));
+该类的构造接受的参数与上文mhscreate完全相同
+	
+	2）void	loadvideo(const string videopath);
+加载一段视频，参数为视频了路径
+	
+	3）void	flushmat();
+将视频vmat包含的信息同步到vmat（即读取下一帧到图像），同时更新gappos中的点的信息，保存
+颜色有变化的点的信息（未经过通道简化）
+
+	4）int*	otmidpos(int bv,int gv,int rv);
+获取特定颜色（就是送入的参数）的终点，返回数组的指针，第一项是X，第二个是Y
+
+	5）void	setmat(Mat* imat);
+直接设置图片以获得中点
+
+	6）void	showmat();
+显示vmat
+
+	第四部分 有关mahmm：
+	文件位置：./cppsrc/mahmm.cpp
+	依赖关系：./cppinc/mahmm.hpp
+	该文件下mahmm类包含private成员_model保存该类的模式，setobser保存特征向量的数目，
+date表示日期（还未实现有任何功能），*_path暂存文件路径，paralist为para（public的成员）
+的一个链表，保存的是不同的hmm参数，结构体mtrl保存的是一个观察序列及其配套参数，mtrlList为
+mtrl的一个链表。int max_index(double* array,int number)是一个求最大值的函数，第一个
+参数是数组地址，第二个是数量
+
+	public下para结构体声明了一组hmm参数
+	
+	1）mahmm(char* config_file_path,char model);
+mahmm类构造需要配置文件的路径以及说明构造的类型
+	<1>:构造参数model为‘T’时，代表类以训练模式构造，配置文件大概格式如下，
+		#SET_OBSER=8
+		#SET_STATE=5
+		#MAT_PI_PATH:../config/Tsample/MATPI
+		#MAT_A_PATH:../config/Tsample/MATA
+		#MAT_B_PATH:../config/Tsample/MATB
+		#MAT_TRAIN:../config/Tsample/mtr0 _1
+		#MAT_TRAIN:../config/Tsample/mtr1 _0
+		#REACESS_SWITCH:0
+
+		*********************************
+		以上为配置文件格式，不能插入空行，必须在
+		所有的最后加入其他内容，第一行设置观察数量
+		第二行为状态数量，后面是配置路径，MAT_TRAIN
+		设置训练文件路径，路径后空格加下划线，后面1为
+		继续，0为结束，REACESS_SWITCH设置是否是
+		多序列的继续训练
+	（多序列的追加训练未实现）
+	<2>:构造参数model为‘D’时，代表类以解码模式构造，配置文件大概格式如下，
+		#SET_OBSER=8
+		#MAT_PI_PATH:../config/Tsample/MATPI
+		#MAT_A_PATH:../config/Tsample/MATA
+		#MAT_B_PATH:../config/Tsample/MATB
+		#ISCONTINUE=1
+		#MAT_PI_PATH:../config/Dsample/MAT2PI
+		#MAT_A_PATH:../config/Dsample/MAT2A
+		#MAT_B_PATH:../config/Dsample/MAT2B
+		#ISCONTINUE=1
+		#MAT_PI_PATH:../config/Dsample/MATPI
+		#MAT_A_PATH:../config/Dsample/MATA
+		#MAT_B_PATH:../config/Dsample/MATB
+		#ISCONTINUE=0
+		#MAT_TRAIN:../config/Tsample/mtr3 _0
+			
+			
+		***********************************
+		以上为配置文件格式，不能插入空行，必须在
+		所有的最后加入其他内容，第一行设置观察数量
+		第二行第三行第四行设置一套模型参数，ISCONTINUE
+		设置是否继续有其他模型，最后设置要解码的文件路径
+
+	2）double forwardAgorithm();
+在参数为‘T’时，进行前向算法的计算，返回评估的概率P（O|lambada）		
+		
+	3）int backwardAgorithm();
+在参数为‘T’时，进行后向算法的计算，返回0
+
+	4）parP reAcess(); 
+在参数为‘T’时，进行重估参数的计算，返回一个para的结构体的指针，当中保存训练
+完成的hmm参数
+
+	5）parP train();
+将上面三步放在一起，返回与4）相同
+
+	6）char* decode();
+在参数为‘D’时，进行解码的计算，认为这个序列为一个手势，从头至尾解码，在paralist
+包含的所有参数中选取最大
+
+	7）char** decodecontinuous();
+在参数为‘D’时，进行连续解码的计算，认为这个序列为一串手势，从头至尾解码，在paralist
+包含的所有参数中选取各阶段最大连接起来。（功能尚未完成）
